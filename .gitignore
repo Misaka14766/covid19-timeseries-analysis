@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+venv/
+.venv/
+
+# Data (large files)
+# *.npy  # keep for reproducibility
+
+# OS
+.DS_Store
+Thumbs.db
