@@ -8,17 +8,19 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-from matplotlib import rcParams
-import warnings, json, base64, io, os
+import warnings, json, base64, io, datetime
 warnings.filterwarnings('ignore')
 
+# 获取当前日期
+current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+
 from statsmodels.tsa.seasonal import seasonal_decompose
-from statsmodels.tsa.stattools import adfuller
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 
-# 字体配置（避免中文乱码）
-plt.rcParams['font.family'] = 'DejaVu Sans'
-plt.rcParams['axes.unicode_minus'] = False
+# 字体配置（支持中文显示）
+plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']  # 优先中文字体
+plt.rcParams['axes.unicode_minus'] = False  # 正确显示负号
+plt.rcParams['font.size'] = 10  # 设置默认字体大小
 
 # ── 加载数据 ──────────────────────────────────────
 df = pd.read_csv("covid_usa_daily.csv", parse_dates=["date"])
@@ -205,36 +207,36 @@ img6 = fig_to_base64(fig6)
 plt.close(fig6)
 
 # ──────────────────────────────────────────────────
-# 图7: ARIMA 预测 vs 实际
+# 图7: ARIMA 预测 vs 实际（聚焦测试期）
 # ──────────────────────────────────────────────────
 train_size = len(series_log) - 12
 test_dates = dates_weekly.iloc[train_size:].reset_index(drop=True)
 
 fig7, ax = plt.subplots(figsize=(13, 5), facecolor=PALETTE["bg"])
 ax.set_facecolor(PALETTE["bg"])
-# 全训练序列
-ax.plot(dates_weekly.iloc[:train_size], train_arr/1e4,
-        color=PALETTE["blue"], lw=2, label="Training Data (万)")
-# 实际测试值
-ax.plot(test_dates, test_arr/1e4,
-        color=PALETTE["green"], lw=2, marker="o", ms=5, label="Actual Test (万)")
-# 预测值
-ax.plot(test_dates, fc_arr/1e4,
-        color=PALETTE["amber"], lw=2, marker="s", ms=5, ls="--", label="ARIMA Forecast (万)")
-# 置信区间
-ax.fill_between(test_dates, fc_lo/1e4, fc_hi/1e4,
+
+# 只显示测试期数据（单位：个位）
+ax.plot(test_dates, test_arr,
+        color=PALETTE["green"], lw=2, marker="o", ms=7, label="Actual")
+ax.plot(test_dates, fc_arr,
+        color=PALETTE["amber"], lw=2, marker="s", ms=7, ls="--", label="ARIMA Forecast")
+ax.fill_between(test_dates, fc_lo, fc_hi,
                 color=PALETTE["amber"], alpha=0.2, label="95% CI")
-ax.axvline(test_dates.iloc[0], color=PALETTE["border"], ls=":", lw=1.5)
+
 ax.set_title(f"ARIMA{res['arima_best']['order']} Forecast vs Actual (Last 12 Weeks)",
              color=PALETTE["text"], fontsize=13)
-ax.set_ylabel("Weekly Cases (10,000)", color=PALETTE["muted"])
+ax.set_ylabel("Weekly Cases", color=PALETTE["muted"])
+ax.set_xlabel("Date", color=PALETTE["muted"])
 ax.tick_params(colors=PALETTE["muted"])
 for sp in ax.spines.values(): sp.set_edgecolor(PALETTE["border"])
 ax.legend(facecolor=PALETTE["card"], edgecolor=PALETTE["border"],
           labelcolor=PALETTE["text"], fontsize=10)
 ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
-ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
+ax.xaxis.set_major_locator(mdates.MonthLocator(interval=1))
 plt.xticks(rotation=30)
+
+# 设置纵轴固定范围 0-1000000
+ax.set_ylim(bottom=0, top=1000000)
 fig7.tight_layout()
 img7 = fig_to_base64(fig7)
 plt.close(fig7)
@@ -415,16 +417,16 @@ html = f"""<!DOCTYPE html>
     <div class="lbl">累计死亡人数</div>
   </div>
   <div class="kpi">
-    <div class="val" style="color:#4ADE80">{d['mean_daily_cases']/1e3:.1f}K</div>
-    <div class="lbl">日均确诊</div>
+    <div class="val" style="color:#4ADE80">{d['mean_weekly_cases']/1e3:.1f}K</div>
+    <div class="lbl">周均确诊</div>
   </div>
   <div class="kpi">
-    <div class="val" style="color:#FBBF24">{d['max_daily_cases']/1e6:.2f}M</div>
-    <div class="lbl">单日峰值 ({d['max_daily_cases_date']})</div>
+    <div class="val" style="color:#FBBF24">{d['max_weekly_cases']/1e6:.2f}M</div>
+    <div class="lbl">周确诊峰值 ({d['max_weekly_cases_date']})</div>
   </div>
   <div class="kpi">
-    <div class="val" style="color:#E879F9">{d['max_daily_deaths']:,.0f}</div>
-    <div class="lbl">单日死亡峰值 ({d['max_daily_deaths_date']})</div>
+    <div class="val" style="color:#E879F9">{d['max_weekly_deaths']:,.0f}</div>
+    <div class="lbl">周死亡峰值 ({d['max_weekly_deaths_date']})</div>
   </div>
 </div>
 
@@ -435,18 +437,19 @@ html = f"""<!DOCTYPE html>
     <strong>数据来源：</strong>Our World in Data（OWID）COVID-19 开放数据集，原始数据由 Johns Hopkins University & WHO 提供，每日更新。
     本报告选取 <strong>美国（USA）</strong> 日度数据，时间段为 2020-03-01 至 2023-05-11，共 <strong>1,167</strong> 个日数据点，
     聚合为 <strong>167</strong> 个周数据点用于时间序列建模。
+    <br/><strong>数据说明：</strong>原始数据中 <code>new_cases</code> 和 <code>new_deaths</code> 字段为每周汇总值（每周某一天记录整周数据，其余日期为0），KPI展示为周数据统计。
   </div>
   <h2><span class="dot" style="background:var(--sky)"></span>日确诊病例与7日滑动均值</h2>
   <div class="img-wrap"><img src="data:image/png;base64,{img1}" alt="daily cases"/></div>
   <p style="color:var(--muted);font-size:.85rem;margin-top:8px">
-    可见明显的多波次疫情浪潮：2020年底冬季第一波、2021年冬季Delta波、2022年初Omicron超级波（峰值超560万/日）。
+    可见明显的多波次疫情浪潮：2020年底冬季第一波、2021年冬季Delta波、2022年初Omicron超级波。
   </p>
 </div>
 <div class="card">
   <h2><span class="dot" style="background:var(--red)"></span>日死亡人数与7日滑动均值</h2>
   <div class="img-wrap"><img src="data:image/png;base64,{img2}" alt="daily deaths"/></div>
   <p style="color:var(--muted);font-size:.85rem;margin-top:8px">
-    死亡峰值出现在 2021-01-17（23,312人），与确诊峰值相比有约2–3周的滞后效应，符合疾病进展规律。
+    死亡峰值与确诊峰值相比有约2–3周的滞后效应，符合疾病进展规律。
   </p>
 </div>
 
@@ -582,7 +585,7 @@ html = f"""<!DOCTYPE html>
 
 <footer>
   <p>数据来源: Our World in Data COVID-19 Dataset (CC BY 4.0) &nbsp;|&nbsp; 分析工具: Python / statsmodels / pandas / matplotlib</p>
-  <p style="margin-top:4px">报告生成时间: 2026-05-04</p>
+  <p style="margin-top:4px">报告生成时间: {current_date}</p>
 </footer>
 
 </div>

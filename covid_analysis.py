@@ -6,43 +6,56 @@ COVID-19 时间序列分析与预测模型
 
 import pandas as pd
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-from matplotlib import rcParams
 import warnings
 warnings.filterwarnings('ignore')
 
-from statsmodels.tsa.stattools import adfuller, kpss
-from statsmodels.tsa.seasonal import seasonal_decompose
+from statsmodels.tsa.stattools import adfuller
 from statsmodels.tsa.arima.model import ARIMA
-from statsmodels.tsa.statespace.sarimax import SARIMAX
-from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
-from statsmodels.stats.diagnostic import acorr_ljungbox
-from scipy import stats
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 import io
-import base64
 import json
 
 # ────────────────────────────────────────────────
-# 1. 数据获取
+# 1. 数据获取（带本地缓存）
 # ────────────────────────────────────────────────
-print("=" * 60)
-print("正在从 Our World in Data 获取 COVID-19 数据...")
-print("=" * 60)
-
-url = "https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/owid-covid-data.csv"
-
+import os
 import urllib.request
 
-req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-response = urllib.request.urlopen(req, timeout=60)
-raw_content = response.read()
-print(f"数据下载完成，大小: {len(raw_content)/1024/1024:.1f} MB")
+CACHE_FILE = "owid-covid-data.csv"
+url = "https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/owid-covid-data.csv"
 
-df_all = pd.read_csv(io.BytesIO(raw_content), low_memory=False)
+print("=" * 60)
+
+def download_and_cache():
+    print("正在从 Our World in Data 下载 COVID-19 数据...")
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    response = urllib.request.urlopen(req, timeout=60)
+    raw_content = response.read()
+    print(f"数据下载完成，大小: {len(raw_content)/1024/1024:.1f} MB")
+    
+    with open(CACHE_FILE, "wb") as f:
+        f.write(raw_content)
+    print(f"已保存到本地缓存: {CACHE_FILE}")
+    
+    return pd.read_csv(io.BytesIO(raw_content), low_memory=False)
+
+if os.path.exists(CACHE_FILE):
+    print(f"检测到本地缓存文件: {CACHE_FILE}")
+    print("正在从本地加载数据...")
+    df_all = pd.read_csv(CACHE_FILE, low_memory=False)
+    print(f"本地数据加载完成，大小: {os.path.getsize(CACHE_FILE)/1024/1024:.1f} MB")
+    
+    # 验证必要字段是否存在
+    required_cols = ["location", "iso_code", "date", "new_cases"]
+    missing_cols = [col for col in required_cols if col not in df_all.columns]
+    if missing_cols:
+        print(f"警告：缓存文件缺少必要字段: {missing_cols}")
+        print("删除损坏的缓存文件并重新下载...")
+        os.remove(CACHE_FILE)
+        df_all = download_and_cache()
+else:
+    df_all = download_and_cache()
+
 print(f"总记录数: {len(df_all):,}")
 print(f"国家/地区数: {df_all['location'].nunique()}")
 
@@ -87,14 +100,15 @@ print(df.head())
 print("\n" + "=" * 60)
 print("描述性统计")
 print("=" * 60)
-desc = df[["new_cases", "new_deaths"]].describe()
+print("注意：原始数据中 new_cases/new_deaths 为每周汇总一次，大部分日期为0")
+desc = df_weekly[["weekly_cases", "weekly_deaths"]].describe()
 print(desc)
 
-# 峰值
-peak_cases_idx = df["new_cases"].idxmax()
-peak_deaths_idx = df["new_deaths"].idxmax()
-print(f"\n单日确诊峰值: {df.loc[peak_cases_idx,'new_cases']:,.0f} ({df.loc[peak_cases_idx,'date'].date()})")
-print(f"单日死亡峰值: {df.loc[peak_deaths_idx,'new_deaths']:,.0f} ({df.loc[peak_deaths_idx,'date'].date()})")
+# 周数据峰值
+peak_weekly_cases_idx = df_weekly["weekly_cases"].idxmax()
+peak_weekly_deaths_idx = df_weekly["weekly_deaths"].idxmax()
+print(f"\n周确诊峰值: {df_weekly.loc[peak_weekly_cases_idx,'weekly_cases']:,.0f} ({df_weekly.loc[peak_weekly_cases_idx,'date'].date()})")
+print(f"周死亡峰值: {df_weekly.loc[peak_weekly_deaths_idx,'weekly_deaths']:,.0f} ({df_weekly.loc[peak_weekly_deaths_idx,'date'].date()})")
 
 # ────────────────────────────────────────────────
 # 4. 使用周数据建立 ARIMA 模型
@@ -205,12 +219,12 @@ print(f"  MAPE: {mape:.2f}%")
 # ────────────────────────────────────────────────
 results = {
     "desc_stats": {
-        "mean_daily_cases": float(df["new_cases"].mean()),
-        "max_daily_cases": float(df["new_cases"].max()),
-        "max_daily_cases_date": str(df.loc[peak_cases_idx, "date"].date()),
-        "mean_daily_deaths": float(df["new_deaths"].mean()),
-        "max_daily_deaths": float(df["new_deaths"].max()),
-        "max_daily_deaths_date": str(df.loc[peak_deaths_idx, "date"].date()),
+        "mean_weekly_cases": float(df_weekly["weekly_cases"].mean()),
+        "max_weekly_cases": float(df_weekly["weekly_cases"].max()),
+        "max_weekly_cases_date": str(df_weekly.loc[peak_weekly_cases_idx, "date"].date()),
+        "mean_weekly_deaths": float(df_weekly["weekly_deaths"].mean()),
+        "max_weekly_deaths": float(df_weekly["weekly_deaths"].max()),
+        "max_weekly_deaths_date": str(df_weekly.loc[peak_weekly_deaths_idx, "date"].date()),
         "total_cases": float(df["total_cases"].max()),
         "total_deaths": float(df["total_deaths"].max()),
         "date_start": str(df["date"].min().date()),

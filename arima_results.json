@@ -1,11 +1,11 @@
 {
   "desc_stats": {
-    "mean_daily_cases": 88554.86632390745,
-    "max_daily_cases": 5650933.0,
-    "max_daily_cases_date": "2022-01-16",
-    "mean_daily_deaths": 964.1893744644387,
-    "max_daily_deaths": 23312.0,
-    "max_daily_deaths_date": "2021-01-17",
+    "mean_weekly_cases": 618823.5269461077,
+    "max_weekly_cases": 5650933.0,
+    "max_weekly_cases_date": "2022-01-16",
+    "mean_weekly_deaths": 6737.7784431137725,
+    "max_weekly_deaths": 23312.0,
+    "max_weekly_deaths_date": "2021-01-17",
     "total_cases": 103343569.0,
     "total_deaths": 1125209.0,
     "date_start": "2020-03-01",
